@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER MODEL - Complete Authentication
+// ============================================
+model User {
+  id                     String    @id @default(uuid())
+  email                  String    @unique
+  hashedPassword         String?   // Nullable for OAuth-only users
+  name                   String?
+  phone                  String?
+  avatar                 String?   // Profile picture URL
+  
+  // Email Verification
+  emailVerified          Boolean   @default(false)
+  emailVerificationToken String?   @unique
+  emailVerifiedAt        DateTime?
+  
+  // Password Reset
+  passwordResetToken     String?   @unique
+  passwordResetExpiry    DateTime?
+  
+  // Two-Factor Authentication
+  twoFactorEnabled       Boolean   @default(false)
+  twoFactorSecret        String?   // TOTP secret
+  backupCodes            String[]  // Recovery codes
+  
+  // OAuth Providers
+  googleId               String?   @unique
+  microsoftId            String?   @unique
+  appleId                String?   @unique
+  
+  // Account Status
+  isActive               Boolean   @default(true)
+  isSuspended            Boolean   @default(false)
+  suspendedAt            DateTime?
+  suspensionReason       String?
+  
+  // Login Tracking
+  lastLoginAt            DateTime?
+  lastLoginIp            String?
+  failedLoginAttempts    Int       @default(0)
+  lockedUntil            DateTime?
+  
+  // Timestamps
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  deletedAt              DateTime? // Soft delete
+  
+  // Relations
+  sessions               Session[]
+  auditLogs              AuditLog[]
+  
+  @@map("users")
+  @@index([email])
+  @@index([googleId])
+  @@index([microsoftId])
+  @@index([appleId])
+}
+
+// ============================================
+// SESSION MODEL - For Refresh Tokens
+// ============================================
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime @default(now())
+  
+  @@map("sessions")
+  @@index([userId])
+  @@index([refreshToken])
+}
+
+// ============================================
+// AUDIT LOG - Track All Actions
+// ============================================
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  action    String   // "login", "logout", "password_reset", "2fa_enabled", etc.
+  entityType String? // "User", "Session", etc.
+  entityId   String?
+  
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?   // Additional context
+  
+  createdAt DateTime @default(now())
+  
+  @@map("audit_logs")
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
