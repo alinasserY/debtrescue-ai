@@ -21,7 +21,7 @@ export const signupSchema = Joi.object({
 export const loginSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().required(),
-  twoFactorCode: Joi.string().length(6).optional(),
+  twoFactorCode: Joi.string().length(6).allow('', null).optional(),  // Allow empty/null for non-2FA logins
 });
 
 export const forgotPasswordSchema = Joi.object({

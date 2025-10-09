@@ -27,20 +27,6 @@ export default function EmailVerified() {
         await authService.verifyEmail(token);
         setVerified(true);
         setIsVerifying(false);
-
-        // Start countdown
-        const interval = setInterval(() => {
-          setCountdown((prev) => {
-            if (prev <= 1) {
-              clearInterval(interval);
-              navigate('/auth/login?verified=true');
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-
-        return () => clearInterval(interval);
       } catch (err: any) {
         setError(err.response?.data?.error?.message || 'Verification failed');
         setIsVerifying(false);
@@ -48,7 +34,35 @@ export default function EmailVerified() {
     };
 
     verifyEmail();
-  }, [token, navigate]);
+  }, [token]);
+
+  // UI countdown (runs only after verified)
+  useEffect(() => {
+    if (verified) {
+      const interval = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [verified]);
+
+  // Separate effect for redirect (post-render safe)
+  useEffect(() => {
+    if (verified) {
+      const timer = setTimeout(() => {
+        navigate('/auth/login?verified=true');
+      }, 5000);  // 5s delay
+
+      return () => clearTimeout(timer);
+    }
+  }, [verified, navigate]);
 
   if (isVerifying) {
     return (

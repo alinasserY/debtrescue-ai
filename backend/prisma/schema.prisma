@@ -21,8 +21,10 @@ model User {
   // Email Verification
   emailVerified          Boolean   @default(false)
   emailVerificationToken String?   @unique
+  emailVerificationExpiry  DateTime?  // <-- THIS MUST BE HERE
   emailVerifiedAt        DateTime?
   
+
   // Password Reset
   passwordResetToken     String?   @unique
   passwordResetExpiry    DateTime?

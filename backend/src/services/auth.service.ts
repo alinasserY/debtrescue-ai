@@ -8,6 +8,7 @@ import { validateEmail, normalizeEmail } from '../utils/email';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt';
 import { generateRandomToken, generateBackupCodes, hashBackupCode } from '../utils/crypto';
 import { generateTOTPSecret, generateTOTPUri, verifyTOTP } from '../utils/totp';
+import { sendVerificationEmail, sendPasswordResetEmail } from './email.service';
 import { logger } from '../utils/logger';
 import {
   AppError,
@@ -70,8 +71,9 @@ export class AuthService {
     // Hash password
     const hashedPassword = await hashPassword(password);
 
-    // Generate email verification token
+    // Generate email verification token (expires in 24 hours)
     const emailVerificationToken = generateRandomToken();
+    const emailVerificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     // Create user
     const user = await prisma.user.create({
@@ -81,6 +83,7 @@ export class AuthService {
         name: name?.trim(),
         phone: phone?.trim(),
         emailVerificationToken,
+        emailVerificationExpiry,
       },
       select: {
         id: true,
@@ -102,7 +105,14 @@ export class AuthService {
       userAgent,
     });
 
-    // TODO: Send verification email
+    // Send verification email (async, non-blocking)
+    try {
+      await sendVerificationEmail(user.email, emailVerificationToken, user.name);
+      logger.info(`Verification email sent for new signup: ${user.email}`, { userId: user.id });
+    } catch (error) {
+      logger.warn(`Verification email failed during signup: ${user.email}`, { userId: user.id, error: (error as Error).message });
+    }
+
     logger.info(`New user signed up: ${user.email}`, { userId: user.id });
 
     // Generate tokens
@@ -167,11 +177,10 @@ export class AuthService {
         where: { id: user.id },
         data: {
           failedLoginAttempts: failedAttempts,
-          lockedUntil: lockAccount ? new Date(Date.now() + 15 * 60 * 1000) : null, // Lock for 15 minutes
+          lockedUntil: lockAccount ? new Date(Date.now() + 15 * 60 * 1000) : null,
         },
       });
 
-      // Create audit log
       await this.createAuditLog({
         userId: user.id,
         action: 'login_failed',
@@ -192,7 +201,7 @@ export class AuthService {
     }
 
     // Check if 2FA is enabled
-    if (user.twoFactorEnabled) {
+    if (user.twoFactorEnabled && user.twoFactorSecret) {
       if (!twoFactorCode) {
         return {
           requiresTwoFactor: true,
@@ -201,11 +210,9 @@ export class AuthService {
         };
       }
 
-      // Verify 2FA code
-      const is2FAValid = verifyTOTP(twoFactorCode, user.twoFactorSecret!);
+      const is2FAValid = verifyTOTP(twoFactorCode, user.twoFactorSecret);
 
       if (!is2FAValid) {
-        // Check backup codes
         const isBackupCodeValid = await this.verifyBackupCode(user.id, twoFactorCode);
         
         if (!isBackupCodeValid) {
@@ -235,7 +242,6 @@ export class AuthService {
       },
     });
 
-    // Create audit log
     await this.createAuditLog({
       userId: user.id,
       action: 'login',
@@ -247,11 +253,9 @@ export class AuthService {
 
     logger.info(`User logged in: ${user.email}`, { userId: user.id });
 
-    // Generate tokens
     const accessToken = generateAccessToken(user.id, user.email);
     const refreshToken = generateRefreshToken(user.id, user.email);
 
-    // Store refresh token in session
     await this.createSession(user.id, refreshToken, userAgent, ipAddress);
 
     return {
@@ -269,16 +273,10 @@ export class AuthService {
     };
   }
 
-  /**
-   * OAuth Login/Signup (Google, Microsoft, Apple)
-   */
   async oauthLogin(data: OAuthData) {
     const { provider, providerId, email, name, avatar, userAgent, ipAddress } = data;
 
-    // Normalize email
     const normalizedEmail = normalizeEmail(email);
-
-    // Find or create user
     const providerIdField = `${provider}Id` as 'googleId' | 'microsoftId' | 'appleId';
 
     let user = await prisma.user.findFirst({
@@ -291,7 +289,6 @@ export class AuthService {
     });
 
     if (user) {
-      // Update provider ID if not set
       if (!user[providerIdField]) {
         user = await prisma.user.update({
           where: { id: user.id },
@@ -299,7 +296,6 @@ export class AuthService {
         });
       }
 
-      // Update last login
       await prisma.user.update({
         where: { id: user.id },
         data: {
@@ -308,24 +304,19 @@ export class AuthService {
         },
       });
     } else {
-      // Create new user
       user = await prisma.user.create({
         data: {
           email: normalizedEmail,
           name,
           avatar,
           [providerIdField]: providerId,
-          emailVerified: true, // OAuth emails are pre-verified
+          emailVerified: true,
         },
       });
 
-      logger.info(`New OAuth user created: ${user.email}`, { 
-        userId: user.id, 
-        provider 
-      });
+      logger.info(`New OAuth user created: ${user.email}`, { userId: user.id, provider });
     }
 
-    // Create audit log
     await this.createAuditLog({
       userId: user.id,
       action: `oauth_login_${provider}`,
@@ -335,11 +326,9 @@ export class AuthService {
       userAgent,
     });
 
-    // Generate tokens
     const accessToken = generateAccessToken(user.id, user.email);
     const refreshToken = generateRefreshToken(user.id, user.email);
 
-    // Store refresh token in session
     await this.createSession(user.id, refreshToken, userAgent, ipAddress);
 
     return {
@@ -357,33 +346,33 @@ export class AuthService {
     };
   }
 
-  /**
-   * Verify email with token
-   */
   async verifyEmail(token: string) {
     const user = await prisma.user.findFirst({
       where: { emailVerificationToken: token },
     });
 
     if (!user) {
-      throw new ValidationError('Invalid or expired verification token');
+      throw new ValidationError('Invalid verification token');
+    }
+
+    if (user.emailVerificationExpiry && user.emailVerificationExpiry < new Date()) {
+      throw new ValidationError('Verification token has expired. Please request a new one.');
     }
 
     if (user.emailVerified) {
       throw new ValidationError('Email already verified');
     }
 
-    // Mark email as verified
     await prisma.user.update({
       where: { id: user.id },
       data: {
         emailVerified: true,
         emailVerifiedAt: new Date(),
         emailVerificationToken: null,
+        emailVerificationExpiry: null,
       },
     });
 
-    // Create audit log
     await this.createAuditLog({
       userId: user.id,
       action: 'email_verified',
@@ -393,14 +382,9 @@ export class AuthService {
 
     logger.info(`Email verified: ${user.email}`, { userId: user.id });
 
-    return {
-      message: 'Email verified successfully',
-    };
+    return { message: 'Email verified successfully' };
   }
 
-  /**
-   * Resend email verification
-   */
   async resendVerificationEmail(email: string) {
     const normalizedEmail = normalizeEmail(email);
 
@@ -409,35 +393,34 @@ export class AuthService {
     });
 
     if (!user) {
-      // Don't reveal if user exists
-      return {
-        message: 'If an account exists, a verification email has been sent.',
-      };
+      return { message: 'If an account exists, a verification email has been sent.' };
     }
 
     if (user.emailVerified) {
       throw new ValidationError('Email already verified');
     }
 
-    // Generate new token
     const emailVerificationToken = generateRandomToken();
+    const emailVerificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     await prisma.user.update({
       where: { id: user.id },
-      data: { emailVerificationToken },
+      data: { 
+        emailVerificationToken,
+        emailVerificationExpiry,
+      },
     });
 
-    // TODO: Send verification email
-    logger.info(`Verification email resent: ${user.email}`, { userId: user.id });
+    try {
+      await sendVerificationEmail(user.email, emailVerificationToken, user.name);
+      logger.info(`Verification email resent: ${user.email}`, { userId: user.id });
+    } catch (error) {
+      logger.warn(`Resend verification email failed: ${user.email}`, { userId: user.id, error: (error as Error).message });
+    }
 
-    return {
-      message: 'If an account exists, a verification email has been sent.',
-    };
+    return { message: 'If an account exists, a verification email has been sent.' };
   }
 
-  /**
-   * Request password reset
-   */
   async requestPasswordReset(email: string, ipAddress?: string) {
     const normalizedEmail = normalizeEmail(email);
 
@@ -445,16 +428,12 @@ export class AuthService {
       where: { email: normalizedEmail },
     });
 
-    // Don't reveal if user exists
     if (!user) {
-      return {
-        message: 'If an account with that email exists, a password reset link has been sent.',
-      };
+      return { message: 'If an account with that email exists, a password reset link has been sent.' };
     }
 
-    // Generate reset token (expires in 1 hour)
     const passwordResetToken = generateRandomToken();
-    const passwordResetExpiry = new Date(Date.now() + 3600000); // 1 hour
+    const passwordResetExpiry = new Date(Date.now() + 3600000);
 
     await prisma.user.update({
       where: { id: user.id },
@@ -464,7 +443,6 @@ export class AuthService {
       },
     });
 
-    // Create audit log
     await this.createAuditLog({
       userId: user.id,
       action: 'password_reset_requested',
@@ -473,22 +451,21 @@ export class AuthService {
       ipAddress,
     });
 
-    // TODO: Send password reset email
-    logger.info(`Password reset requested: ${user.email}`, { userId: user.id });
+    try {
+      await sendPasswordResetEmail(user.email, passwordResetToken);
+      logger.info(`Password reset email sent: ${user.email}`, { userId: user.id });
+    } catch (error) {
+      logger.warn(`Password reset email failed: ${user.email}`, { userId: user.id, error: (error as Error).message });
+    }
 
-    return {
-      message: 'If an account with that email exists, a password reset link has been sent.',
-    };
+    return { message: 'If an account with that email exists, a password reset link has been sent.' };
   }
 
-  /**
-   * Reset password with token
-   */
   async resetPassword(token: string, newPassword: string, ipAddress?: string) {
     const user = await prisma.user.findFirst({
       where: { 
         passwordResetToken: token,
-        passwordResetExpiry: { gt: new Date() }, // Token not expired
+        passwordResetExpiry: { gt: new Date() },
       },
     });
 
@@ -496,30 +473,25 @@ export class AuthService {
       throw new ValidationError('Invalid or expired reset token');
     }
 
-    // Validate new password
     validatePasswordStrength(newPassword);
 
-    // Hash new password
     const hashedPassword = await hashPassword(newPassword);
 
-    // Update password and clear reset token
     await prisma.user.update({
       where: { id: user.id },
       data: {
         hashedPassword,
         passwordResetToken: null,
         passwordResetExpiry: null,
-        failedLoginAttempts: 0, // Reset failed attempts
+        failedLoginAttempts: 0,
         lockedUntil: null,
       },
     });
 
-    // Invalidate all sessions (force re-login)
     await prisma.session.deleteMany({
       where: { userId: user.id },
     });
 
-    // Create audit log
     await this.createAuditLog({
       userId: user.id,
       action: 'password_reset',
@@ -530,14 +502,9 @@ export class AuthService {
 
     logger.info(`Password reset: ${user.email}`, { userId: user.id });
 
-    return {
-      message: 'Password reset successfully. Please log in with your new password.',
-    };
+    return { message: 'Password reset successfully. Please log in with your new password.' };
   }
 
-  /**
-   * Enable 2FA - Step 1: Generate secret and QR code
-   */
   async enable2FAInit(userId: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -552,11 +519,9 @@ export class AuthService {
       throw new ValidationError('Two-factor authentication is already enabled');
     }
 
-    // Generate TOTP secret
     const secret = generateTOTPSecret();
     const otpauthUrl = generateTOTPUri(user.email, secret);
 
-    // Store secret (but don't enable 2FA yet)
     await prisma.user.update({
       where: { id: userId },
       data: { twoFactorSecret: secret },
@@ -569,9 +534,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Enable 2FA - Step 2: Verify code and activate
-   */
   async enable2FAVerify(userId: string, code: string, ipAddress?: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -595,18 +557,15 @@ export class AuthService {
       throw new ValidationError('Two-factor setup not initiated. Please start the setup process first.');
     }
 
-    // Verify code
     const isValid = verifyTOTP(code, user.twoFactorSecret);
 
     if (!isValid) {
       throw new ValidationError('Invalid verification code');
     }
 
-    // Generate backup codes
     const backupCodes = generateBackupCodes(10);
     const hashedBackupCodes = backupCodes.map(code => hashBackupCode(code));
 
-    // Enable 2FA
     await prisma.user.update({
       where: { id: userId },
       data: {
@@ -615,7 +574,6 @@ export class AuthService {
       },
     });
 
-    // Create audit log
     await this.createAuditLog({
       userId: user.id,
       action: '2fa_enabled',
@@ -627,14 +585,11 @@ export class AuthService {
     logger.info(`2FA enabled: ${user.email}`, { userId: user.id });
 
     return {
-      backupCodes, // Return plain codes to user (only shown once)
+      backupCodes,
       message: 'Two-factor authentication enabled successfully. Save your backup codes in a safe place.',
     };
   }
 
-  /**
-   * Disable 2FA
-   */
   async disable2FA(userId: string, password: string, ipAddress?: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -648,7 +603,6 @@ export class AuthService {
       throw new ValidationError('Two-factor authentication is not enabled');
     }
 
-    // Verify password
     if (!user.hashedPassword) {
       throw new ValidationError('Cannot disable 2FA for OAuth-only accounts');
     }
@@ -659,7 +613,6 @@ export class AuthService {
       throw new UnauthorizedError('Invalid password');
     }
 
-    // Disable 2FA
     await prisma.user.update({
       where: { id: userId },
       data: {
@@ -669,7 +622,6 @@ export class AuthService {
       },
     });
 
-    // Create audit log
     await this.createAuditLog({
       userId: user.id,
       action: '2fa_disabled',
@@ -680,14 +632,9 @@ export class AuthService {
 
     logger.info(`2FA disabled: ${user.email}`, { userId: user.id });
 
-    return {
-      message: 'Two-factor authentication disabled',
-    };
+    return { message: 'Two-factor authentication disabled' };
   }
 
-  /**
-   * Verify backup code
-   */
   private async verifyBackupCode(userId: string, code: string): Promise<boolean> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -705,7 +652,6 @@ export class AuthService {
       return false;
     }
 
-    // Remove used backup code
     const updatedCodes = user.backupCodes.filter((_, index) => index !== codeIndex);
 
     await prisma.user.update({
@@ -718,9 +664,6 @@ export class AuthService {
     return true;
   }
 
-  /**
-   * Refresh access token
-   */
   async refreshAccessToken(refreshToken: string) {
     const session = await prisma.session.findUnique({
       where: { refreshToken },
@@ -732,22 +675,18 @@ export class AuthService {
     }
 
     if (session.expiresAt < new Date()) {
-      // Delete expired session
       await prisma.session.delete({
         where: { id: session.id },
       });
       throw new UnauthorizedError('Refresh token expired');
     }
 
-    // Check if user is still active
     if (session.user.isSuspended || session.user.deletedAt) {
       throw new UnauthorizedError('Account is no longer active');
     }
 
-    // Generate new access token
     const accessToken = generateAccessToken(session.user.id, session.user.email);
 
-    // Update session last used
     await prisma.session.update({
       where: { id: session.id },
       data: { lastUsedAt: new Date() },
@@ -756,21 +695,16 @@ export class AuthService {
     return { accessToken };
   }
 
-  /**
-   * Logout (invalidate session)
-   */
   async logout(refreshToken: string, ipAddress?: string) {
     const session = await prisma.session.findUnique({
       where: { refreshToken },
     });
 
     if (session) {
-      // Delete session
       await prisma.session.delete({
         where: { id: session.id },
       });
 
-      // Create audit log
       await this.createAuditLog({
         userId: session.userId,
         action: 'logout',
@@ -785,15 +719,11 @@ export class AuthService {
     return { message: 'Logged out successfully' };
   }
 
-  /**
-   * Logout from all devices
-   */
   async logoutAllDevices(userId: string, ipAddress?: string) {
     await prisma.session.deleteMany({
       where: { userId },
     });
 
-    // Create audit log
     await this.createAuditLog({
       userId,
       action: 'logout_all_devices',
@@ -807,9 +737,6 @@ export class AuthService {
     return { message: 'Logged out from all devices successfully' };
   }
 
-  /**
-   * Get user sessions
-   */
   async getUserSessions(userId: string) {
     const sessions = await prisma.session.findMany({
       where: { userId },
@@ -827,9 +754,6 @@ export class AuthService {
     return sessions;
   }
 
-  /**
-   * Delete specific session
-   */
   async deleteSession(sessionId: string, userId: string) {
     const session = await prisma.session.findFirst({
       where: { id: sessionId, userId },
@@ -846,16 +770,13 @@ export class AuthService {
     return { message: 'Session deleted successfully' };
   }
 
-  /**
-   * Create session (store refresh token)
-   */
   private async createSession(
     userId: string,
     refreshToken: string,
     userAgent?: string,
     ipAddress?: string
   ) {
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     return prisma.session.create({
       data: {
@@ -868,9 +789,6 @@ export class AuthService {
     });
   }
 
-  /**
-   * Create audit log entry
-   */
   private async createAuditLog(data: {
     userId?: string;
     action: string;
