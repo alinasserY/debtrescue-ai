@@ -17,6 +17,28 @@ model User {
   name                   String?
   phone                  String?
   avatar                 String?   // Profile picture URL
+
+   // NEW FIELDS - Professional profile
+  company                String?
+  jobTitle               String?
+  website                String?
+  bio                    String?   @db.Text
+  location               String?
+  timezone               String?   @default("America/New_York")
+  language               String?   @default("en")
+
+  // Address fields
+  addressLine1           String?
+  addressLine2           String?
+  city                   String?
+  state                  String?
+  zipCode                String?
+  country                String?   @default("US")
+
+  // Preferences
+  marketingEmails        Boolean   @default(false)
+  productUpdates         Boolean   @default(true)
+  weeklyDigest           Boolean   @default(true)
   
   // Email Verification
   emailVerified          Boolean   @default(false)
@@ -79,9 +101,18 @@ model Session {
   userAgent    String?
   ipAddress    String?
   
+  isRevoked    Boolean  @default(false)
+  
   expiresAt    DateTime
   createdAt    DateTime @default(now())
   lastUsedAt   DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt  // <-- ADD @default(now()) HERE
+
+    // Preferences (make sure these are present)
+  marketingEmails        Boolean   @default(false)
+  productUpdates         Boolean   @default(true)
+  weeklyDigest           Boolean   @default(true)
+
   
   @@map("sessions")
   @@index([userId])

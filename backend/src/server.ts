@@ -7,6 +7,8 @@ import { errorHandler } from './middleware/errorHandler.middleware';
 import { apiLimiter } from './middleware/rateLimit.middleware';
 import { logger } from './utils/logger';
 import routes from './routes';
+import usersRoutes from './routes/users.routes';
+import path from 'path';
 
 // Load environment variables
 dotenv.config();
@@ -57,8 +59,12 @@ if (process.env.NODE_ENV === 'development') {
 // ROUTES
 // ============================================
 
-// API routes (all under /api/v1)
+// API routes
 app.use('/api/v1', routes);
+app.use('/api/v1/users', usersRoutes);
+// Serve uploaded files (ADD THIS)
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 
 // Root endpoint
 app.get('/', (req: Request, res: Response) => {
@@ -95,7 +101,7 @@ const server = app.listen(PORT, () => {
   logger.info(`🚀 Server running on http://localhost:${PORT}`);
   logger.info(`📊 Health check: http://localhost:${PORT}/api/v1/health`);
   logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`🔐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+  logger.info(`🔗 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
 });
 
 // Graceful shutdown
@@ -118,7 +124,6 @@ process.on('SIGINT', () => {
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', { promise, reason });
-  // Exit process or handle appropriately
 });
 
 // Handle uncaught exceptions

@@ -1,0 +1,17 @@
+-- AlterTable
+ALTER TABLE "users" ADD COLUMN     "addressLine1" TEXT,
+ADD COLUMN     "addressLine2" TEXT,
+ADD COLUMN     "bio" TEXT,
+ADD COLUMN     "city" TEXT,
+ADD COLUMN     "company" TEXT,
+ADD COLUMN     "country" TEXT DEFAULT 'US',
+ADD COLUMN     "jobTitle" TEXT,
+ADD COLUMN     "language" TEXT DEFAULT 'en',
+ADD COLUMN     "location" TEXT,
+ADD COLUMN     "marketingEmails" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "productUpdates" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "state" TEXT,
+ADD COLUMN     "timezone" TEXT DEFAULT 'America/New_York',
+ADD COLUMN     "website" TEXT,
+ADD COLUMN     "weeklyDigest" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "zipCode" TEXT;

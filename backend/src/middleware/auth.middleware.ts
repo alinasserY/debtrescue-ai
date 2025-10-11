@@ -6,9 +6,10 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 /**
- * Middleware to verify JWT token and attach user to request
+ * Main authentication middleware
+ * Use this for routes that require authentication
  */
-export const authenticate = async (
+export const authMiddleware = async (
   req: Request,
   res: Response,
   next: NextFunction
@@ -56,11 +57,23 @@ export const authenticate = async (
       email: user.email,
     };
 
+    // Attach session if available (for session revocation)
+    if (payload.sessionId) {
+      req.session = {
+        id: payload.sessionId,
+      };
+    }
+
     next();
   } catch (error) {
     next(error);
   }
 };
+
+/**
+ * Alias for backward compatibility
+ */
+export const authenticate = authMiddleware;
 
 /**
  * Optional authentication - doesn't throw error if no token

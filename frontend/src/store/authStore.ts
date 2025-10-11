@@ -1,78 +1,123 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { authService } from '@/services/auth.service';
-import type { User } from '@/types/auth.types';
+
+interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  phone: string | null;
+  avatar: string | null;
+  emailVerified: boolean;
+  twoFactorEnabled: boolean;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
 
 interface AuthState {
   user: User | null;
-  isAuthenticated: boolean;
+  token: string | null;
   isLoading: boolean;
-  error: string | null;
-  
-  // Actions
+  isAuthenticated: boolean;
   setUser: (user: User | null) => void;
-  setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
+  setToken: (token: string | null) => void;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
-  clearError: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  isAuthenticated: authService.isAuthenticated(),
-  isLoading: false,
-  error: null,
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set, get) => ({
+      user: null,
+      token: null,
+      isLoading: false,
+      isAuthenticated: false,
 
-  setUser: (user) => set({ user, isAuthenticated: !!user }),
-  
-  setLoading: (loading) => set({ isLoading: loading }),
-  
-  setError: (error) => set({ error }),
-  
-  clearError: () => set({ error: null }),
-
-  login: async (email, password) => {
-    try {
-      set({ isLoading: true, error: null });
-      const result = await authService.login({ email, password });
+      setUser: (user) => set({ user, isAuthenticated: !!user }),
       
-      if ('requiresTwoFactor' in result) {
-        set({ isLoading: false });
-        throw new Error('2FA_REQUIRED');
-      }
-      
-      set({ user: result.user, isAuthenticated: true, isLoading: false });
-    } catch (error: any) {
-      set({ 
-        isLoading: false, 
-        error: error.response?.data?.error?.message || error.message 
-      });
-      throw error;
-    }
-  },
+      setToken: (token) => {
+        if (token) {
+          localStorage.setItem('accessToken', token);
+        } else {
+          localStorage.removeItem('accessToken');
+        }
+        set({ token, isAuthenticated: !!token });
+      },
 
-  logout: async () => {
-    try {
-      await authService.logout();
-    } finally {
-      set({ user: null, isAuthenticated: false, error: null });
-    }
-  },
+      login: async (email: string, password: string) => {
+        set({ isLoading: true });
+        try {
+          const response = await authService.login({ email, password });
+          
+          if ('requiresTwoFactor' in response) {
+            throw new Error('2FA required');
+          }
 
-  fetchUser: async () => {
-    try {
-      set({ isLoading: true, error: null });
-      const user = await authService.getCurrentUser();
-      set({ user, isAuthenticated: true, isLoading: false });
-    } catch (error: any) {
-      set({ 
-        user: null, 
-        isAuthenticated: false, 
-        isLoading: false,
-        error: error.response?.data?.error?.message || error.message 
-      });
-      throw error;
+          set({
+            user: response.user,
+            token: response.accessToken,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+          
+          localStorage.setItem('accessToken', response.accessToken);
+        } catch (error) {
+          set({ isLoading: false });
+          throw error;
+        }
+      },
+
+      logout: async () => {
+        try {
+          await authService.logout();
+        } catch (error) {
+          console.error('Logout error:', error);
+        } finally {
+          localStorage.removeItem('accessToken');
+          set({
+            user: null,
+            token: null,
+            isAuthenticated: false,
+          });
+        }
+      },
+
+      fetchUser: async () => {
+        const token = localStorage.getItem('accessToken');
+        if (!token) {
+          set({ isAuthenticated: false, user: null });
+          return;
+        }
+
+        set({ isLoading: true });
+        try {
+          const user = await authService.getCurrentUser();
+          set({
+            user,
+            token,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+        } catch (error) {
+          localStorage.removeItem('accessToken');
+          set({
+            user: null,
+            token: null,
+            isAuthenticated: false,
+            isLoading: false,
+          });
+          throw error;
+        }
+      },
+    }),
+    {
+      name: 'auth-storage',
+      partialize: (state) => ({
+        user: state.user,
+        token: state.token,
+        isAuthenticated: state.isAuthenticated,
+      }),
     }
-  },
-}));
+  )
+);

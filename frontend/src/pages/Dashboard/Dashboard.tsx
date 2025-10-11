@@ -1,230 +1,238 @@
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '@/store/authStore';
-import { Button } from '@/components/ui/Button';
-import { LogOut, User, Shield, CreditCard } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuthStore } from '@/store/authStore';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/Button';
+import {
+  CreditCard,
+  TrendingUp,
+  FileText,
+  ArrowRight,
+  DollarSign,
+  Clock,
+  CheckCircle,
+} from 'lucide-react';
 
 export default function Dashboard() {
-  const { user, logout, fetchUser, isLoading } = useAuthStore();
+  const { user } = useAuthStore();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    // Fetch user data on mount
-    if (!user) {
-      fetchUser().catch(() => {
-        navigate('/auth/login');
-      });
-    }
-  }, [user, fetchUser, navigate]);
+  const stats = [
+    {
+      label: 'Total Debt',
+      value: '$0',
+      change: null,
+      icon: CreditCard,
+      color: 'blue',
+    },
+    {
+      label: 'Total Saved',
+      value: '$0',
+      change: null,
+      icon: DollarSign,
+      color: 'green',
+    },
+    {
+      label: 'Active Negotiations',
+      value: '0',
+      change: null,
+      icon: FileText,
+      color: 'purple',
+    },
+    {
+      label: 'Success Rate',
+      value: '0%',
+      change: null,
+      icon: TrendingUp,
+      color: 'orange',
+    },
+  ];
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/auth/login');
-  };
-
-  if (isLoading || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
+  const quickActions = [
+    {
+      title: 'Link Your Accounts',
+      description: 'Connect your credit cards and loans to get started',
+      icon: CreditCard,
+      color: 'bg-blue-500',
+      onClick: () => navigate('/accounts/link'),
+    },
+    {
+      title: 'Start First Negotiation',
+      description: 'Let AI help you reduce your debt payments',
+      icon: FileText,
+      color: 'bg-purple-500',
+      onClick: () => navigate('/negotiations/create'),
+    },
+    {
+      title: 'Upload Documents',
+      description: 'Add statements and creditor correspondence',
+      icon: FileText,
+      color: 'bg-green-500',
+      onClick: () => navigate('/documents'),
+    },
+  ];
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-                <span className="text-xl font-bold text-primary-foreground">D</span>
-              </div>
-              <h1 className="text-2xl font-bold">DebtRescue.AI</h1>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-medium">{user.name || 'User'}</p>
-                <p className="text-xs text-muted-foreground">{user.email}</p>
-              </div>
-              <Button variant="ghost" size="icon" onClick={handleLogout}>
-                <LogOut className="w-5 h-5" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="p-6">
+      {/* Welcome Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-8"
+      >
+        <h1 className="text-3xl font-bold mb-2">
+          Welcome back, {user?.name?.split(' ')[0] || 'there'}! 👋
+        </h1>
+        <p className="text-muted-foreground">
+          Here's your debt relief dashboard. Let's help you become debt-free.
+        </p>
+      </motion.div>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Welcome Section */}
+      {/* Email Verification Warning */}
+      {!user?.emailVerified && (
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-12"
+          className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg"
         >
-          <h2 className="text-4xl font-bold mb-2">
-            Welcome back, {user.name?.split(' ')[0] || 'there'}! 👋
-          </h2>
-          <p className="text-lg text-muted-foreground">
-            Here's your debt relief dashboard
+          <p className="text-sm text-yellow-800 dark:text-yellow-300">
+            ⚠️ <strong>Action required:</strong> Please verify your email address to access all
+            features. Check your inbox for the verification link.
           </p>
         </motion.div>
+      )}
 
-        {/* Email Verification Warning */}
-        {!user.emailVerified && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-8 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg"
-          >
-            <p className="text-sm text-yellow-800 dark:text-yellow-300">
-              ⚠️ <strong>Action required:</strong> Please verify your email address to access all features.
-              Check your inbox for the verification link.
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {stats.map((stat, index) => {
+          const Icon = stat.icon;
+          return (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              className="bg-card border border-border rounded-xl p-6 hover:shadow-lg transition-shadow"
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div
+                  className={`w-12 h-12 rounded-lg bg-${stat.color}-100 dark:bg-${stat.color}-900/20 flex items-center justify-center`}
+                >
+                  <Icon className={`w-6 h-6 text-${stat.color}-600 dark:text-${stat.color}-400`} />
+                </div>
+              </div>
+              <p className="text-2xl font-bold mb-1">{stat.value}</p>
+              <p className="text-sm text-muted-foreground">{stat.label}</p>
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {/* Quick Actions */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        className="mb-8"
+      >
+        <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {quickActions.map((action, index) => {
+            const Icon = action.icon;
+            return (
+              <button
+                key={index}
+                onClick={action.onClick}
+                className="bg-card border border-border rounded-xl p-6 text-left hover:shadow-lg transition-all hover:scale-105"
+              >
+                <div
+                  className={`w-12 h-12 rounded-lg ${action.color} flex items-center justify-center mb-4`}
+                >
+                  <Icon className="w-6 h-6 text-white" />
+                </div>
+                <h3 className="font-semibold mb-2">{action.title}</h3>
+                <p className="text-sm text-muted-foreground mb-3">{action.description}</p>
+                <div className="flex items-center text-primary text-sm font-medium">
+                  Get started <ArrowRight className="w-4 h-4 ml-1" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </motion.div>
+
+      {/* Recent Activity */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5 }}
+        className="bg-card border border-border rounded-xl p-6 mb-8"
+      >
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold">Recent Activity</h2>
+          <Button variant="ghost" size="sm">
+            View All
+          </Button>
+        </div>
+
+        <div className="text-center py-12">
+          <Clock className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+          <p className="text-muted-foreground mb-4">No activity yet</p>
+          <p className="text-sm text-muted-foreground mb-6">
+            Start by linking your accounts to see your debt activity here
+          </p>
+          <Button onClick={() => navigate('/accounts/link')}>Link Your Accounts</Button>
+        </div>
+      </motion.div>
+
+      {/* Progress Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+        className="bg-gradient-to-br from-primary/10 via-primary/5 to-secondary/10 border border-border rounded-xl p-6"
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-semibold mb-2">Your Debt Freedom Journey</h2>
+            <p className="text-sm text-muted-foreground">
+              Complete these steps to maximize your savings
             </p>
-          </motion.div>
-        )}
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="bg-card border border-border rounded-xl p-6"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/20 rounded-lg flex items-center justify-center">
-                <CreditCard className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">$0</p>
-                <p className="text-sm text-muted-foreground">Total Debt</p>
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="bg-card border border-border rounded-xl p-6"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-lg flex items-center justify-center">
-                <span className="text-2xl">💰</span>
-              </div>
-              <div>
-                <p className="text-2xl font-bold">$0</p>
-                <p className="text-sm text-muted-foreground">Saved</p>
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="bg-card border border-border rounded-xl p-6"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/20 rounded-lg flex items-center justify-center">
-                <span className="text-2xl">📊</span>
-              </div>
-              <div>
-                <p className="text-2xl font-bold">0</p>
-                <p className="text-sm text-muted-foreground">Active Negotiations</p>
-              </div>
-            </div>
-          </motion.div>
+          </div>
+          <span className="text-2xl font-bold text-primary">0/5</span>
         </div>
 
-        {/* Actions */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="bg-gradient-to-br from-primary/10 to-secondary/10 rounded-2xl p-8"
-        >
-          <h3 className="text-2xl font-bold mb-4">Get Started</h3>
-          <p className="text-muted-foreground mb-6">
-            Let's set up your account and start reducing your debt
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Button className="h-auto py-4 flex-col items-start text-left" variant="outline">
-              <User className="w-6 h-6 mb-2" />
-              <span className="font-semibold">Complete Your Profile</span>
-              <span className="text-xs text-muted-foreground">Add your information</span>
-            </Button>
-            
-            <Button className="h-auto py-4 flex-col items-start text-left" variant="outline">
-              <CreditCard className="w-6 h-6 mb-2" />
-              <span className="font-semibold">Link Your Accounts</span>
-              <span className="text-xs text-muted-foreground">Connect your debts</span>
-            </Button>
-
-            <Button className="h-auto py-4 flex-col items-start text-left" variant="outline">
-              <Shield className="w-6 h-6 mb-2" />
-              <span className="font-semibold">Enable 2FA</span>
-              <span className="text-xs text-muted-foreground">Secure your account</span>
-            </Button>
-            
-            <Button className="h-auto py-4 flex-col items-start text-left">
-              <span className="text-2xl mb-2">🚀</span>
-              <span className="font-semibold">Start First Negotiation</span>
-              <span className="text-xs opacity-75">Let AI help you save</span>
-            </Button>
-          </div>
-        </motion.div>
-
-        {/* Account Info */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="mt-12 bg-card border border-border rounded-xl p-6"
-        >
-          <h3 className="text-lg font-semibold mb-4">Account Information</h3>
-          <dl className="space-y-3">
-            <div className="flex justify-between">
-              <dt className="text-sm text-muted-foreground">Email</dt>
-              <dd className="text-sm font-medium">{user.email}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-sm text-muted-foreground">Email Verified</dt>
-              <dd className="text-sm font-medium">
-                {user.emailVerified ? (
-                  <span className="text-green-600">✓ Verified</span>
-                ) : (
-                  <span className="text-yellow-600">⚠ Not Verified</span>
-                )}
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-sm text-muted-foreground">Two-Factor Auth</dt>
-              <dd className="text-sm font-medium">
-                {user.twoFactorEnabled ? (
-                  <span className="text-green-600">✓ Enabled</span>
-                ) : (
-                  <span className="text-muted-foreground">Disabled</span>
-                )}
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-sm text-muted-foreground">Member Since</dt>
-              <dd className="text-sm font-medium">
-                {new Date(user.createdAt).toLocaleDateString('en-US', {
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric'
-                })}
-              </dd>
-            </div>
-          </dl>
-        </motion.div>
-      </main>
+        <div className="space-y-3">
+          {[
+            { label: 'Complete your profile', done: false, link: '/account/profile' },
+            { label: 'Link your accounts', done: false, link: '/accounts/link' },
+            { label: 'Upload debt statements', done: false, link: '/documents' },
+            { label: 'Start first negotiation', done: false, link: '/negotiations/create' },
+            { label: 'Enable two-factor authentication', done: false, link: '/account/security' },
+          ].map((step, index) => (
+            <button
+              key={index}
+              onClick={() => navigate(step.link)}
+              className="w-full flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                    step.done
+                      ? 'bg-primary border-primary'
+                      : 'border-muted-foreground bg-background'
+                  }`}
+                >
+                  {step.done && <CheckCircle className="w-4 h-4 text-white" />}
+                </div>
+                <span className={step.done ? 'line-through text-muted-foreground' : ''}>
+                  {step.label}
+                </span>
+              </div>
+              <ArrowRight className="w-4 h-4 text-muted-foreground" />
+            </button>
+          ))}
+        </div>
+      </motion.div>
     </div>
   );
 }
